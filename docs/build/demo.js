@@ -4907,7 +4907,10 @@
     const jsondifflength = document.getElementById("jsondifflength");
     try {
       const delta = instance.diff(left, right);
-      resultsSections.setAttribute("data-diff", typeof delta === "undefined" ? "no-diff" : "has-diff");
+      resultsSections.setAttribute(
+        "data-diff",
+        typeof delta === "undefined" ? "no-diff" : "has-diff"
+      );
       if (typeof delta === "undefined") {
         switch (selectedType) {
           case "visual":
@@ -5213,7 +5216,9 @@
     }
   );
   document.querySelector("#gist-link")?.addEventListener("input", (e) => {
-    const match = /^(?:https?:\/\/)?gist\.github\.com\/([^/]+)\/([0-9a-f]+)/i.exec(e.target.value);
+    const match = /^(?:https?:\/\/)?gist\.github\.com\/([^/]+)\/([0-9a-f]+)/i.exec(
+      e.target.value
+    );
     if (!match)
       return;
     load.gist(match[2], (gist) => {
