@@ -4714,6 +4714,9 @@
       if (typeof objRecord.id !== "undefined") {
         return objRecord.id;
       }
+      if (typeof objRecord.key !== "undefined") {
+        return objRecord.key;
+      }
       if (typeof objRecord.name !== "undefined") {
         return objRecord.name;
       }
@@ -4898,11 +4901,13 @@
       return;
     }
     const selectedType = getSelectedDeltaType();
+    const resultsSections = document.getElementById("results");
     const visualdiff = document.getElementById("visualdiff");
     const annotateddiff = document.getElementById("annotateddiff");
     const jsondifflength = document.getElementById("jsondifflength");
     try {
       const delta = instance.diff(left, right);
+      resultsSections.setAttribute("data-diff", typeof delta === "undefined" ? "no-diff" : "has-diff");
       if (typeof delta === "undefined") {
         switch (selectedType) {
           case "visual":
@@ -4944,6 +4949,7 @@
         console.error(err);
         console.error(err.stack);
       }
+      resultsSections.removeAttribute("data-diff");
     }
     document.getElementById("results").style.display = "";
   };
@@ -5034,7 +5040,7 @@
         areas.right.setValue("");
       }
     },
-    gist: function(id) {
+    gist: function(id, onSuccess) {
       dom.getJson("https://api.github.com/gists/" + id, function(error, data) {
         if (error) {
           const gistError = data;
@@ -5045,18 +5051,26 @@
           return;
         }
         const gistData = data;
-        const filenames = [];
+        const files = [];
         for (const filename in gistData.files) {
           const file = gistData.files[filename];
-          if (file.language === "JSON") {
-            filenames.push(filename);
+          if (/^json[5c]?$/i.test(file.language)) {
+            files.push(file);
           }
         }
-        filenames.sort();
-        const files = [
-          gistData.files[filenames[0]],
-          gistData.files[filenames[1]]
-        ];
+        if (files.length < 1) {
+          load.data({
+            error: "no JSON files found in this gist"
+          });
+          return;
+        }
+        if (files.length < 2) {
+          files.push({
+            language: "JSON",
+            filename: "missing.json",
+            content: '"only 1 JSON files found in the gist, need 2 to compare"'
+          });
+        }
         load.data({
           url: gistData.html_url,
           description: gistData.description,
@@ -5069,6 +5083,7 @@
             content: files[1].content
           }
         });
+        onSuccess?.(gistData);
       });
     },
     leftright: function(descriptionArg, leftValueArg, rightValueArg) {
@@ -5197,4 +5212,21 @@
       }
     }
   );
+  document.querySelector("#gist-link")?.addEventListener("input", (e) => {
+    const match = /^(?:https?:\/\/)?gist\.github\.com\/([^/]+)\/([0-9a-f]+)/i.exec(e.target.value);
+    if (!match)
+      return;
+    load.gist(match[2], (gist) => {
+      window.history.pushState({}, "", `?${gist.owner.login}/${gist.id}`);
+      document.querySelector("h1")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+      const input = document.querySelector("#gist-link");
+      if (input) {
+        input.value = "";
+        input.blur();
+      }
+    });
+  });
 })();
