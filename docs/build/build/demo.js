@@ -4547,14 +4547,18 @@
 
   // demo.ts
   var colorSchemeIsDark = () => {
-    const colorSchemaMeta = (document.querySelector('meta[name="color-scheme"]') || null).content || "default";
+    const colorSchemaMeta = (document.querySelector(
+      'meta[name="color-scheme"]'
+    ) || null).content || "default";
     return colorSchemaMeta === "only dark" || colorSchemaMeta !== "only light" && window.matchMedia("(prefers-color-scheme: dark)").matches;
   };
   var onColorSchemeChange = (handler) => {
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
       handler(colorSchemeIsDark());
     });
-    const colorSchemaMeta = document.querySelector('meta[name="color-scheme"]');
+    const colorSchemaMeta = document.querySelector(
+      'meta[name="color-scheme"]'
+    );
     if (colorSchemaMeta) {
       const observer = new MutationObserver((mutationsList) => {
         for (const mutation of mutationsList) {
@@ -4566,7 +4570,10 @@
       observer.observe(colorSchemaMeta, { attributes: true });
     }
   };
-  document.body.setAttribute("data-color-scheme", colorSchemeIsDark() ? "dark" : "light");
+  document.body.setAttribute(
+    "data-color-scheme",
+    colorSchemeIsDark() ? "dark" : "light"
+  );
   onColorSchemeChange((dark) => {
     document.body.setAttribute("data-color-scheme", dark ? "dark" : "light");
   });
@@ -4749,7 +4756,10 @@
     },
     getJson: function(url, callback) {
       if (!url.startsWith("https://api.github.com/gists")) {
-        return callback(null, "invalid url, for security reasons only gists are allowed");
+        return callback(
+          null,
+          "invalid url, for security reasons only gists are allowed"
+        );
       }
       let request = new XMLHttpRequest();
       request.open("GET", url, true);
