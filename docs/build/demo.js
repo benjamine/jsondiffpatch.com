@@ -4571,11 +4571,11 @@
     }
   };
   document.body.setAttribute(
-    "data-color-scheme",
+    "data-theme",
     colorSchemeIsDark() ? "dark" : "light"
   );
   onColorSchemeChange((dark) => {
-    document.body.setAttribute("data-color-scheme", dark ? "dark" : "light");
+    document.body.setAttribute("data-theme", dark ? "dark" : "light");
   });
   var parseJson = (text) => {
     try {
@@ -4833,7 +4833,7 @@
         }
         this.editor.setValue(value);
       };
-      this.prettyfy = () => {
+      this.reformat = () => {
         const value = this.parse();
         const prettyJson = typeof value === "string" ? value : JSON.stringify(value, null, 2);
         this.setValue(prettyJson);
@@ -4862,11 +4862,11 @@
       this.container = element.parentNode;
       const self2 = this;
       const prettifyButton = this.container.querySelector(
-        ".prettyfy"
+        ".reformat"
       );
       if (prettifyButton) {
         prettifyButton.addEventListener("click", function() {
-          self2.prettyfy();
+          self2.reformat();
         });
       }
     }
@@ -4964,29 +4964,34 @@
   areas.left.element.addEventListener("keyup", compare2);
   areas.right.element.addEventListener("keyup", compare2);
   var getSelectedDeltaType = function() {
-    if (document.getElementById("show-delta-type-visual").checked) {
-      return "visual";
-    }
-    if (document.getElementById("show-delta-type-annotated").checked) {
-      return "annotated";
-    }
-    if (document.getElementById("show-delta-type-json").checked) {
-      return "json";
-    }
+    return document.querySelector("#results")?.getAttribute("data-delta-type") || "visual";
   };
-  var showSelectedDeltaType = function() {
-    const type = getSelectedDeltaType();
-    document.getElementById("delta-panel-visual").style.display = type === "visual" ? "" : "none";
-    document.getElementById("delta-panel-annotated").style.display = type === "annotated" ? "" : "none";
-    document.getElementById("delta-panel-json").style.display = type === "json" ? "" : "none";
+  var showDeltaType = function(type) {
+    if (type !== "visual" && type !== "annotated" && type !== "json") {
+      return false;
+    }
+    document.querySelectorAll(".delta-type-switch li").forEach((el2) => {
+      el2.classList.remove("is-active");
+    });
+    document.querySelector(`[href*="#delta-${type}"]`)?.closest("li")?.classList.add("is-active");
+    document.querySelector("#results")?.setAttribute("data-delta-type", type);
     compare2();
     if (type === "json") {
       areas.delta.editor.refresh();
     }
+    return true;
   };
-  document.getElementById("show-delta-type-visual").addEventListener("click", showSelectedDeltaType);
-  document.getElementById("show-delta-type-annotated").addEventListener("click", showSelectedDeltaType);
-  document.getElementById("show-delta-type-json").addEventListener("click", showSelectedDeltaType);
+  document.querySelectorAll(".delta-type-switch a").forEach((el2) => {
+    el2.addEventListener("click", (e) => {
+      const match = /#delta-(.+)$/.exec(e.target?.href);
+      if (!match)
+        return;
+      const deltaType = match[1];
+      if (showDeltaType(deltaType)) {
+        e.preventDefault();
+      }
+    });
+  });
   document.getElementById("swap").addEventListener("click", function() {
     const leftValue = areas.left.getValue();
     areas.left.setValue(areas.right.getValue());
@@ -5008,6 +5013,47 @@
   document.addEventListener("DOMContentLoaded", function() {
     setTimeout(compare2);
   });
+  var loadExampleById = (id) => {
+    switch (id) {
+      case "text": {
+        const exampleJson = getExampleJson();
+        load.data({
+          left: {
+            name: "left.txt",
+            content: JSON.parse(exampleJson[0]).summary
+          },
+          right: {
+            name: "right.txt",
+            content: JSON.parse(exampleJson[1]).summary
+          }
+        });
+        break;
+      }
+      case "gist":
+        document.location = "?benjamine/9188826";
+        break;
+      case "moving":
+        document.location = "?desc=moving%20around&left=" + encodeURIComponent(JSON.stringify([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])) + "&right=" + encodeURIComponent(JSON.stringify([10, 0, 1, 7, 2, 4, 5, 6, 88, 9, 3]));
+        break;
+      case "query":
+        document.location = "?desc=encoded%20in%20url&left=" + /* jshint quotmark: false */
+        encodeURIComponent(
+          JSON.stringify({
+            "don't": "abuse",
+            with: ["large", "urls"]
+          })
+        ) + "&right=" + encodeURIComponent(
+          JSON.stringify({
+            "don't": "use",
+            with: [">", 2, "KB urls"]
+          })
+        );
+        break;
+      default:
+        document.location = "?";
+        break;
+    }
+  };
   var load = {
     data: function(dataArg) {
       const data = dataArg || {};
@@ -5140,10 +5186,15 @@
         });
       }
     },
+    example: function(arg) {
+      const id = decodeURIComponent(arg || "");
+      loadExampleById(id);
+    },
     key: function(key) {
       const matchers = {
         gist: /^(?:https?:\/\/)?(?:gist\.github\.com\/)?(?:[\w0-9\-a-f]+\/)?([0-9a-f]+)$/i,
-        leftright: /^(?:desc=(.*)?&)?left=(.*)&right=(.*)&?$/i
+        leftright: /^(?:desc=(.*)?&)?left=(.*)&right=(.*)&?$/i,
+        example: /^example=([\w\d\-_/]+)$/i
       };
       for (const loader in matchers) {
         const match = matchers[loader].exec(key);
@@ -5166,56 +5217,7 @@
       right: exampleJson[1]
     });
   }
-  document.getElementById("examples").addEventListener(
-    "change",
-    function() {
-      const example = trim(this.value);
-      switch (example) {
-        case "text": {
-          const exampleJson = getExampleJson();
-          load.data({
-            left: {
-              name: "left.txt",
-              content: JSON.parse(exampleJson[0]).summary
-            },
-            right: {
-              name: "right.txt",
-              content: JSON.parse(exampleJson[1]).summary
-            }
-          });
-          break;
-        }
-        case "gist":
-          document.location = "?benjamine/9188826";
-          break;
-        case "moving":
-          document.location = "?desc=moving%20around&left=" + encodeURIComponent(
-            JSON.stringify([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-          ) + "&right=" + encodeURIComponent(
-            JSON.stringify([10, 0, 1, 7, 2, 4, 5, 6, 88, 9, 3])
-          );
-          break;
-        case "query":
-          document.location = "?desc=encoded%20in%20url&left=" + /* jshint quotmark: false */
-          encodeURIComponent(
-            JSON.stringify({
-              "don't": "abuse",
-              with: ["large", "urls"]
-            })
-          ) + "&right=" + encodeURIComponent(
-            JSON.stringify({
-              "don't": "use",
-              with: [">", 2, "KB urls"]
-            })
-          );
-          break;
-        default:
-          document.location = "?";
-          break;
-      }
-    }
-  );
-  document.querySelector("#gist-link")?.addEventListener("input", (e) => {
+  document.querySelector("#gist_url")?.addEventListener("input", (e) => {
     const match = /^(?:https?:\/\/)?gist\.github\.com\/([^/]+)\/([0-9a-f]+)/i.exec(
       e.target.value
     );
@@ -5227,7 +5229,7 @@
         behavior: "smooth",
         block: "start"
       });
-      const input = document.querySelector("#gist-link");
+      const input = document.querySelector("#gist_url");
       if (input) {
         input.value = "";
         input.blur();
