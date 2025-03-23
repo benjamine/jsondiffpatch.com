@@ -5202,8 +5202,10 @@
           return load[loader].apply(load, match.slice(1));
         }
       }
+      const exampleJson = getExampleJson();
       load.data({
-        error: "unsupported source: " + key
+        left: exampleJson[0],
+        right: exampleJson[1]
       });
     }
   };
