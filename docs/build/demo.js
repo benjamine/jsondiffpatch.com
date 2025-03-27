@@ -2870,575 +2870,6 @@
   // demo.ts
   var import_json5 = __toESM(require_dist(), 1);
 
-  // ../../packages/jsondiffpatch/lib/formatters/base.js
-  var trimUnderscore = (str) => {
-    if (str.substring(0, 1) === "_") {
-      return str.slice(1);
-    }
-    return str;
-  };
-  var arrayKeyToSortNumber = (key) => {
-    if (key === "_t") {
-      return -1;
-    } else {
-      if (key.substring(0, 1) === "_") {
-        return parseInt(key.slice(1), 10);
-      } else {
-        return parseInt(key, 10) + 0.1;
-      }
-    }
-  };
-  var arrayKeyComparer = (key1, key2) => arrayKeyToSortNumber(key1) - arrayKeyToSortNumber(key2);
-  var BaseFormatter = class {
-    format(delta, left) {
-      const context = {};
-      this.prepareContext(context);
-      const preparedContext = context;
-      this.recurse(preparedContext, delta, left);
-      return this.finalize(preparedContext);
-    }
-    prepareContext(context) {
-      context.buffer = [];
-      context.out = function(...args) {
-        this.buffer.push(...args);
-      };
-    }
-    typeFormattterNotFound(context, deltaType) {
-      throw new Error(`cannot format delta type: ${deltaType}`);
-    }
-    /* eslint-disable @typescript-eslint/no-unused-vars */
-    typeFormattterErrorFormatter(context, err, delta, leftValue, key, leftKey, movedFrom) {
-    }
-    /* eslint-enable @typescript-eslint/no-unused-vars */
-    finalize({ buffer }) {
-      if (Array.isArray(buffer)) {
-        return buffer.join("");
-      }
-    }
-    recurse(context, delta, left, key, leftKey, movedFrom, isLast) {
-      const useMoveOriginHere = delta && movedFrom;
-      const leftValue = useMoveOriginHere ? movedFrom.value : left;
-      if (typeof delta === "undefined" && typeof key === "undefined") {
-        return void 0;
-      }
-      const type = this.getDeltaType(delta, movedFrom);
-      const nodeType = type === "node" ? delta._t === "a" ? "array" : "object" : "";
-      if (typeof key !== "undefined") {
-        this.nodeBegin(context, key, leftKey, type, nodeType, isLast);
-      } else {
-        this.rootBegin(context, type, nodeType);
-      }
-      let typeFormattter;
-      try {
-        typeFormattter = type !== "unknown" ? this[`format_${type}`] : this.typeFormattterNotFound(context, type);
-        typeFormattter.call(this, context, delta, leftValue, key, leftKey, movedFrom);
-      } catch (err) {
-        this.typeFormattterErrorFormatter(context, err, delta, leftValue, key, leftKey, movedFrom);
-        if (typeof console !== "undefined" && console.error) {
-          console.error(err.stack);
-        }
-      }
-      if (typeof key !== "undefined") {
-        this.nodeEnd(context, key, leftKey, type, nodeType, isLast);
-      } else {
-        this.rootEnd(context, type, nodeType);
-      }
-    }
-    formatDeltaChildren(context, delta, left) {
-      this.forEachDeltaKey(delta, left, (key, leftKey, movedFrom, isLast) => {
-        this.recurse(context, delta[key], left ? left[leftKey] : void 0, key, leftKey, movedFrom, isLast);
-      });
-    }
-    forEachDeltaKey(delta, left, fn) {
-      const keys = Object.keys(delta);
-      const arrayKeys = delta._t === "a";
-      const moveDestinations = {};
-      let name;
-      if (typeof left !== "undefined") {
-        for (name in left) {
-          if (Object.prototype.hasOwnProperty.call(left, name)) {
-            if (typeof delta[name] === "undefined" && (!arrayKeys || typeof delta[`_${name}`] === "undefined")) {
-              keys.push(name);
-            }
-          }
-        }
-      }
-      for (name in delta) {
-        if (Object.prototype.hasOwnProperty.call(delta, name)) {
-          const value = delta[name];
-          if (Array.isArray(value) && value[2] === 3) {
-            const movedDelta = value;
-            moveDestinations[`${movedDelta[1]}`] = {
-              key: name,
-              value: left && left[parseInt(name.substring(1), 10)]
-            };
-            if (this.includeMoveDestinations !== false) {
-              if (typeof left === "undefined" && typeof delta[movedDelta[1]] === "undefined") {
-                keys.push(movedDelta[1].toString());
-              }
-            }
-          }
-        }
-      }
-      if (arrayKeys) {
-        keys.sort(arrayKeyComparer);
-      } else {
-        keys.sort();
-      }
-      for (let index = 0, length = keys.length; index < length; index++) {
-        const key = keys[index];
-        if (arrayKeys && key === "_t") {
-          continue;
-        }
-        const leftKey = arrayKeys ? parseInt(trimUnderscore(key), 10) : key;
-        const isLast = index === length - 1;
-        fn(key, leftKey, moveDestinations[leftKey], isLast);
-      }
-    }
-    getDeltaType(delta, movedFrom) {
-      if (typeof delta === "undefined") {
-        if (typeof movedFrom !== "undefined") {
-          return "movedestination";
-        }
-        return "unchanged";
-      }
-      if (Array.isArray(delta)) {
-        if (delta.length === 1) {
-          return "added";
-        }
-        if (delta.length === 2) {
-          return "modified";
-        }
-        if (delta.length === 3 && delta[2] === 0) {
-          return "deleted";
-        }
-        if (delta.length === 3 && delta[2] === 2) {
-          return "textdiff";
-        }
-        if (delta.length === 3 && delta[2] === 3) {
-          return "moved";
-        }
-      } else if (typeof delta === "object") {
-        return "node";
-      }
-      return "unknown";
-    }
-    parseTextDiff(value) {
-      const output = [];
-      const lines = value.split("\n@@ ");
-      for (let i2 = 0, l = lines.length; i2 < l; i2++) {
-        const line = lines[i2];
-        const lineOutput = {
-          pieces: []
-        };
-        const location = /^(?:@@ )?[-+]?(\d+),(\d+)/.exec(line).slice(1);
-        lineOutput.location = {
-          line: location[0],
-          chr: location[1]
-        };
-        const pieces = line.split("\n").slice(1);
-        for (let pieceIndex = 0, piecesLength = pieces.length; pieceIndex < piecesLength; pieceIndex++) {
-          const piece = pieces[pieceIndex];
-          if (!piece.length) {
-            continue;
-          }
-          const pieceOutput = {
-            type: "context"
-          };
-          if (piece.substring(0, 1) === "+") {
-            pieceOutput.type = "added";
-          } else if (piece.substring(0, 1) === "-") {
-            pieceOutput.type = "deleted";
-          }
-          pieceOutput.text = piece.slice(1);
-          lineOutput.pieces.push(pieceOutput);
-        }
-        output.push(lineOutput);
-      }
-      return output;
-    }
-  };
-  var base_default = BaseFormatter;
-
-  // ../../packages/jsondiffpatch/lib/formatters/annotated.js
-  var AnnotatedFormatter = class extends base_default {
-    constructor() {
-      super();
-      this.includeMoveDestinations = false;
-    }
-    prepareContext(context) {
-      super.prepareContext(context);
-      context.indent = function(levels) {
-        this.indentLevel = (this.indentLevel || 0) + (typeof levels === "undefined" ? 1 : levels);
-        this.indentPad = new Array(this.indentLevel + 1).join("&nbsp;&nbsp;");
-      };
-      context.row = (json, htmlNote) => {
-        context.out('<tr><td style="white-space: nowrap;"><pre class="jsondiffpatch-annotated-indent" style="display: inline-block">');
-        if (context.indentPad != null)
-          context.out(context.indentPad);
-        context.out('</pre><pre style="display: inline-block">');
-        context.out(json);
-        context.out('</pre></td><td class="jsondiffpatch-delta-note"><div>');
-        if (htmlNote != null)
-          context.out(htmlNote);
-        context.out("</div></td></tr>");
-      };
-    }
-    typeFormattterErrorFormatter(context, err) {
-      context.row("", `<pre class="jsondiffpatch-error">${err}</pre>`);
-    }
-    formatTextDiffString(context, value) {
-      const lines = this.parseTextDiff(value);
-      context.out('<ul class="jsondiffpatch-textdiff">');
-      for (let i2 = 0, l = lines.length; i2 < l; i2++) {
-        const line = lines[i2];
-        context.out(`<li><div class="jsondiffpatch-textdiff-location"><span class="jsondiffpatch-textdiff-line-number">${line.location.line}</span><span class="jsondiffpatch-textdiff-char">${line.location.chr}</span></div><div class="jsondiffpatch-textdiff-line">`);
-        const pieces = line.pieces;
-        for (let pieceIndex = 0, piecesLength = pieces.length; pieceIndex < piecesLength; pieceIndex++) {
-          const piece = pieces[pieceIndex];
-          context.out(`<span class="jsondiffpatch-textdiff-${piece.type}">${piece.text}</span>`);
-        }
-        context.out("</div></li>");
-      }
-      context.out("</ul>");
-    }
-    rootBegin(context, type, nodeType) {
-      context.out('<table class="jsondiffpatch-annotated-delta">');
-      if (type === "node") {
-        context.row("{");
-        context.indent();
-      }
-      if (nodeType === "array") {
-        context.row('"_t": "a",', "Array delta (member names indicate array indices)");
-      }
-    }
-    rootEnd(context, type) {
-      if (type === "node") {
-        context.indent(-1);
-        context.row("}");
-      }
-      context.out("</table>");
-    }
-    nodeBegin(context, key, leftKey, type, nodeType) {
-      context.row(`&quot;${key}&quot;: {`);
-      if (type === "node") {
-        context.indent();
-      }
-      if (nodeType === "array") {
-        context.row('"_t": "a",', "Array delta (member names indicate array indices)");
-      }
-    }
-    nodeEnd(context, key, leftKey, type, nodeType, isLast) {
-      if (type === "node") {
-        context.indent(-1);
-      }
-      context.row(`}${isLast ? "" : ","}`);
-    }
-    format_unchanged() {
-    }
-    format_movedestination() {
-    }
-    format_node(context, delta, left) {
-      this.formatDeltaChildren(context, delta, left);
-    }
-    format_added(context, delta, left, key, leftKey) {
-      formatAnyChange.call(this, context, delta, left, key, leftKey);
-    }
-    format_modified(context, delta, left, key, leftKey) {
-      formatAnyChange.call(this, context, delta, left, key, leftKey);
-    }
-    format_deleted(context, delta, left, key, leftKey) {
-      formatAnyChange.call(this, context, delta, left, key, leftKey);
-    }
-    format_moved(context, delta, left, key, leftKey) {
-      formatAnyChange.call(this, context, delta, left, key, leftKey);
-    }
-    format_textdiff(context, delta, left, key, leftKey) {
-      formatAnyChange.call(this, context, delta, left, key, leftKey);
-    }
-  };
-  var wrapPropertyName = (name) => `<pre style="display:inline-block">&quot;${name}&quot;</pre>`;
-  var deltaAnnotations = {
-    added(delta, left, key, leftKey) {
-      const formatLegend = " <pre>([newValue])</pre>";
-      if (typeof leftKey === "undefined") {
-        return `new value${formatLegend}`;
-      }
-      if (typeof leftKey === "number") {
-        return `insert at index ${leftKey}${formatLegend}`;
-      }
-      return `add property ${wrapPropertyName(leftKey)}${formatLegend}`;
-    },
-    modified(delta, left, key, leftKey) {
-      const formatLegend = " <pre>([previousValue, newValue])</pre>";
-      if (typeof leftKey === "undefined") {
-        return `modify value${formatLegend}`;
-      }
-      if (typeof leftKey === "number") {
-        return `modify at index ${leftKey}${formatLegend}`;
-      }
-      return `modify property ${wrapPropertyName(leftKey)}${formatLegend}`;
-    },
-    deleted(delta, left, key, leftKey) {
-      const formatLegend = " <pre>([previousValue, 0, 0])</pre>";
-      if (typeof leftKey === "undefined") {
-        return `delete value${formatLegend}`;
-      }
-      if (typeof leftKey === "number") {
-        return `remove index ${leftKey}${formatLegend}`;
-      }
-      return `delete property ${wrapPropertyName(leftKey)}${formatLegend}`;
-    },
-    moved(delta, left, key, leftKey) {
-      return `move from <span title="(position to remove at original state)">index ${leftKey}</span> to <span title="(position to insert at final state)">index ${delta[1]}</span>`;
-    },
-    textdiff(delta, left, key, leftKey) {
-      const location = typeof leftKey === "undefined" ? "" : typeof leftKey === "number" ? ` at index ${leftKey}` : ` at property ${wrapPropertyName(leftKey)}`;
-      return `text diff${location}, format is <a href="https://code.google.com/p/google-diff-match-patch/wiki/Unidiff">a variation of Unidiff</a>`;
-    }
-  };
-  var formatAnyChange = function(context, delta, left, key, leftKey) {
-    const deltaType = this.getDeltaType(delta);
-    const annotator = deltaAnnotations[deltaType];
-    const htmlNote = annotator && annotator(delta, left, key, leftKey);
-    let json = JSON.stringify(delta, null, 2);
-    if (deltaType === "textdiff") {
-      json = json.split("\\n").join('\\n"+\n   "');
-    }
-    context.indent();
-    context.row(json, htmlNote);
-    context.indent(-1);
-  };
-  var defaultInstance;
-  function format(delta, left) {
-    if (!defaultInstance) {
-      defaultInstance = new AnnotatedFormatter();
-    }
-    return defaultInstance.format(delta, left);
-  }
-
-  // ../../packages/jsondiffpatch/lib/formatters/html.js
-  var HtmlFormatter = class extends base_default {
-    typeFormattterErrorFormatter(context, err) {
-      context.out(`<pre class="jsondiffpatch-error">${err}</pre>`);
-    }
-    formatValue(context, value) {
-      context.out(`<pre>${htmlEscape(JSON.stringify(value, null, 2))}</pre>`);
-    }
-    formatTextDiffString(context, value) {
-      const lines = this.parseTextDiff(value);
-      context.out('<ul class="jsondiffpatch-textdiff">');
-      for (let i2 = 0, l = lines.length; i2 < l; i2++) {
-        const line = lines[i2];
-        context.out(`<li><div class="jsondiffpatch-textdiff-location"><span class="jsondiffpatch-textdiff-line-number">${line.location.line}</span><span class="jsondiffpatch-textdiff-char">${line.location.chr}</span></div><div class="jsondiffpatch-textdiff-line">`);
-        const pieces = line.pieces;
-        for (let pieceIndex = 0, piecesLength = pieces.length; pieceIndex < piecesLength; pieceIndex++) {
-          const piece = pieces[pieceIndex];
-          context.out(`<span class="jsondiffpatch-textdiff-${piece.type}">${htmlEscape(decodeURI(piece.text))}</span>`);
-        }
-        context.out("</div></li>");
-      }
-      context.out("</ul>");
-    }
-    rootBegin(context, type, nodeType) {
-      const nodeClass = `jsondiffpatch-${type}${nodeType ? ` jsondiffpatch-child-node-type-${nodeType}` : ""}`;
-      context.out(`<div class="jsondiffpatch-delta ${nodeClass}">`);
-    }
-    rootEnd(context) {
-      context.out(`</div>${context.hasArrows ? `<script type="text/javascript">setTimeout(${adjustArrows.toString()},10);<\/script>` : ""}`);
-    }
-    nodeBegin(context, key, leftKey, type, nodeType) {
-      const nodeClass = `jsondiffpatch-${type}${nodeType ? ` jsondiffpatch-child-node-type-${nodeType}` : ""}`;
-      context.out(`<li class="${nodeClass}" data-key="${leftKey}"><div class="jsondiffpatch-property-name">${leftKey}</div>`);
-    }
-    nodeEnd(context) {
-      context.out("</li>");
-    }
-    format_unchanged(context, delta, left) {
-      if (typeof left === "undefined") {
-        return;
-      }
-      context.out('<div class="jsondiffpatch-value">');
-      this.formatValue(context, left);
-      context.out("</div>");
-    }
-    format_movedestination(context, delta, left) {
-      if (typeof left === "undefined") {
-        return;
-      }
-      context.out('<div class="jsondiffpatch-value">');
-      this.formatValue(context, left);
-      context.out("</div>");
-    }
-    format_node(context, delta, left) {
-      const nodeType = delta._t === "a" ? "array" : "object";
-      context.out(`<ul class="jsondiffpatch-node jsondiffpatch-node-type-${nodeType}">`);
-      this.formatDeltaChildren(context, delta, left);
-      context.out("</ul>");
-    }
-    format_added(context, delta) {
-      context.out('<div class="jsondiffpatch-value">');
-      this.formatValue(context, delta[0]);
-      context.out("</div>");
-    }
-    format_modified(context, delta) {
-      context.out('<div class="jsondiffpatch-value jsondiffpatch-left-value">');
-      this.formatValue(context, delta[0]);
-      context.out('</div><div class="jsondiffpatch-value jsondiffpatch-right-value">');
-      this.formatValue(context, delta[1]);
-      context.out("</div>");
-    }
-    format_deleted(context, delta) {
-      context.out('<div class="jsondiffpatch-value">');
-      this.formatValue(context, delta[0]);
-      context.out("</div>");
-    }
-    format_moved(context, delta) {
-      context.out('<div class="jsondiffpatch-value">');
-      this.formatValue(context, delta[0]);
-      context.out(`</div><div class="jsondiffpatch-moved-destination">${delta[1]}</div>`);
-      context.out(
-        /* jshint multistr: true */
-        `<div class="jsondiffpatch-arrow" style="position: relative; left: -34px;">
-          <svg width="30" height="60" style="position: absolute; display: none;">
-          <defs>
-              <marker id="markerArrow" markerWidth="8" markerHeight="8"
-                 refx="2" refy="4" stroke="#88f"
-                     orient="auto" markerUnits="userSpaceOnUse">
-                  <path d="M1,1 L1,7 L7,4 L1,1" style="fill: #339;" />
-              </marker>
-          </defs>
-          <path d="M30,0 Q-10,25 26,50"
-            style="stroke: #88f; stroke-width: 2px; fill: none; stroke-opacity: 0.5; marker-end: url(#markerArrow);"
-          ></path>
-          </svg>
-      </div>`
-      );
-      context.hasArrows = true;
-    }
-    format_textdiff(context, delta) {
-      context.out('<div class="jsondiffpatch-value">');
-      this.formatTextDiffString(context, delta[0]);
-      context.out("</div>");
-    }
-  };
-  function htmlEscape(text) {
-    let html = text;
-    const replacements = [
-      [/&/g, "&amp;"],
-      [/</g, "&lt;"],
-      [/>/g, "&gt;"],
-      [/'/g, "&apos;"],
-      [/"/g, "&quot;"]
-    ];
-    for (let i2 = 0; i2 < replacements.length; i2++) {
-      html = html.replace(replacements[i2][0], replacements[i2][1]);
-    }
-    return html;
-  }
-  var adjustArrows = function jsondiffpatchHtmlFormatterAdjustArrows(nodeArg) {
-    const node = nodeArg || document;
-    const getElementText = ({ textContent, innerText }) => textContent || innerText;
-    const eachByQuery = (el2, query, fn) => {
-      const elems = el2.querySelectorAll(query);
-      for (let i2 = 0, l = elems.length; i2 < l; i2++) {
-        fn(elems[i2]);
-      }
-    };
-    const eachChildren = ({ children }, fn) => {
-      for (let i2 = 0, l = children.length; i2 < l; i2++) {
-        fn(children[i2], i2);
-      }
-    };
-    eachByQuery(node, ".jsondiffpatch-arrow", ({ parentNode, children, style }) => {
-      const arrowParent = parentNode;
-      const svg = children[0];
-      const path = svg.children[1];
-      svg.style.display = "none";
-      const destination = getElementText(arrowParent.querySelector(".jsondiffpatch-moved-destination"));
-      const container = arrowParent.parentNode;
-      let destinationElem;
-      eachChildren(container, (child) => {
-        if (child.getAttribute("data-key") === destination) {
-          destinationElem = child;
-        }
-      });
-      if (!destinationElem) {
-        return;
-      }
-      try {
-        const distance = destinationElem.offsetTop - arrowParent.offsetTop;
-        svg.setAttribute("height", `${Math.abs(distance) + 6}`);
-        style.top = `${-8 + (distance > 0 ? 0 : distance)}px`;
-        const curve = distance > 0 ? `M30,0 Q-10,${Math.round(distance / 2)} 26,${distance - 4}` : `M30,${-distance} Q-10,${Math.round(-distance / 2)} 26,4`;
-        path.setAttribute("d", curve);
-        svg.style.display = "";
-      } catch (err) {
-      }
-    });
-  };
-  var showUnchanged = (show, node, delay) => {
-    const el2 = node || document.body;
-    const prefix = "jsondiffpatch-unchanged-";
-    const classes = {
-      showing: `${prefix}showing`,
-      hiding: `${prefix}hiding`,
-      visible: `${prefix}visible`,
-      hidden: `${prefix}hidden`
-    };
-    const list = el2.classList;
-    if (!list) {
-      return;
-    }
-    if (!delay) {
-      list.remove(classes.showing);
-      list.remove(classes.hiding);
-      list.remove(classes.visible);
-      list.remove(classes.hidden);
-      if (show === false) {
-        list.add(classes.hidden);
-      }
-      return;
-    }
-    if (show === false) {
-      list.remove(classes.showing);
-      list.add(classes.visible);
-      setTimeout(() => {
-        list.add(classes.hiding);
-      }, 10);
-    } else {
-      list.remove(classes.hiding);
-      list.add(classes.showing);
-      list.remove(classes.hidden);
-    }
-    const intervalId = setInterval(() => {
-      adjustArrows(el2);
-    }, 100);
-    setTimeout(() => {
-      list.remove(classes.showing);
-      list.remove(classes.hiding);
-      if (show === false) {
-        list.add(classes.hidden);
-        list.remove(classes.visible);
-      } else {
-        list.add(classes.visible);
-        list.remove(classes.hidden);
-      }
-      setTimeout(() => {
-        list.remove(classes.visible);
-        clearInterval(intervalId);
-      }, delay + 400);
-    }, delay);
-  };
-  var hideUnchanged = (node, delay) => showUnchanged(false, node, delay);
-  var defaultInstance2;
-  function format2(delta, left) {
-    if (!defaultInstance2) {
-      defaultInstance2 = new HtmlFormatter();
-    }
-    return defaultInstance2.format(delta, left);
-  }
-
   // ../../packages/jsondiffpatch/lib/with-text-diffs.js
   var import_diff_match_patch = __toESM(require_diff_match_patch(), 1);
 
@@ -3602,6 +3033,36 @@
   };
   var pipe_default = Pipe;
 
+  // ../../packages/jsondiffpatch/lib/clone.js
+  function cloneRegExp(re) {
+    const regexMatch = /^\/(.*)\/([gimyu]*)$/.exec(re.toString());
+    return new RegExp(regexMatch[1], regexMatch[2]);
+  }
+  function clone(arg) {
+    if (typeof arg !== "object") {
+      return arg;
+    }
+    if (arg === null) {
+      return null;
+    }
+    if (Array.isArray(arg)) {
+      return arg.map(clone);
+    }
+    if (arg instanceof Date) {
+      return new Date(arg.getTime());
+    }
+    if (arg instanceof RegExp) {
+      return cloneRegExp(arg);
+    }
+    const cloned = {};
+    for (const name in arg) {
+      if (Object.prototype.hasOwnProperty.call(arg, name)) {
+        cloned[name] = clone(arg[name]);
+      }
+    }
+    return cloned;
+  }
+
   // ../../packages/jsondiffpatch/lib/contexts/context.js
   var Context = class {
     setResult(result) {
@@ -3633,36 +3094,6 @@
     }
   };
 
-  // ../../packages/jsondiffpatch/lib/clone.js
-  function cloneRegExp(re) {
-    const regexMatch = /^\/(.*)\/([gimyu]*)$/.exec(re.toString());
-    return new RegExp(regexMatch[1], regexMatch[2]);
-  }
-  function clone(arg) {
-    if (typeof arg !== "object") {
-      return arg;
-    }
-    if (arg === null) {
-      return null;
-    }
-    if (Array.isArray(arg)) {
-      return arg.map(clone);
-    }
-    if (arg instanceof Date) {
-      return new Date(arg.getTime());
-    }
-    if (arg instanceof RegExp) {
-      return cloneRegExp(arg);
-    }
-    const cloned = {};
-    for (const name in arg) {
-      if (Object.prototype.hasOwnProperty.call(arg, name)) {
-        cloned[name] = clone(arg[name]);
-      }
-    }
-    return cloned;
-  }
-
   // ../../packages/jsondiffpatch/lib/contexts/diff.js
   var DiffContext = class extends Context {
     constructor(left, right) {
@@ -3671,16 +3102,28 @@
       this.right = right;
       this.pipe = "diff";
     }
-    setResult(result) {
-      if (this.options.cloneDiffValues && typeof result === "object") {
-        const clone2 = typeof this.options.cloneDiffValues === "function" ? this.options.cloneDiffValues : clone;
-        if (typeof result[0] === "object") {
-          result[0] = clone2(result[0]);
+    prepareDeltaResult(result) {
+      var _a;
+      if (typeof result === "object") {
+        if (((_a = this.options) === null || _a === void 0 ? void 0 : _a.omitRemovedValues) && Array.isArray(result) && result.length > 1 && (result.length === 2 || // modified
+        result[2] === 0 || // deleted
+        result[2] === 3)) {
+          result[0] = 0;
         }
-        if (typeof result[1] === "object") {
-          result[1] = clone2(result[1]);
+        if (this.options.cloneDiffValues) {
+          const clone2 = typeof this.options.cloneDiffValues === "function" ? this.options.cloneDiffValues : clone;
+          if (typeof result[0] === "object") {
+            result[0] = clone2(result[0]);
+          }
+          if (typeof result[1] === "object") {
+            result[1] = clone2(result[1]);
+          }
         }
       }
+      return result;
+    }
+    setResult(result) {
+      this.prepareDeltaResult(result);
       return super.setResult(result);
     }
   };
@@ -4104,6 +3547,7 @@
       };
       for (index = commonHead; index < len2 - commonTail; index++) {
         result[index] = [array2[index]];
+        context.prepareDeltaResult(result[index]);
       }
       context.setResult(result).exit();
       return;
@@ -4113,7 +3557,9 @@
         _t: "a"
       };
       for (index = commonHead; index < len1 - commonTail; index++) {
-        result[`_${index}`] = [array1[index], 0, 0];
+        const key = `_${index}`;
+        result[key] = [array1[index], 0, 0];
+        context.prepareDeltaResult(result[key]);
       }
       context.setResult(result).exit();
       return;
@@ -4129,7 +3575,9 @@
     };
     for (index = commonHead; index < len1 - commonTail; index++) {
       if (seq.indices1.indexOf(index - commonHead) < 0) {
-        result[`_${index}`] = [array1[index], 0, 0];
+        const key = `_${index}`;
+        result[key] = [array1[index], 0, 0];
+        context.prepareDeltaResult(result[key]);
         removedItems.push(index);
       }
     }
@@ -4165,6 +3613,7 @@
         }
         if (!isMove) {
           result[index] = [array2[index]];
+          context.prepareDeltaResult(result[index]);
         }
       } else {
         index1 = seq.indices1[indexOnArray2] + commonHead;
@@ -4545,6 +3994,838 @@
     return new diffpatcher_default(Object.assign(Object.assign({}, options), { textDiff: Object.assign(Object.assign({}, options === null || options === void 0 ? void 0 : options.textDiff), { diffMatchPatch: import_diff_match_patch.default }) }));
   }
 
+  // ../../packages/jsondiffpatch/lib/formatters/base.js
+  var BaseFormatter = class {
+    format(delta, left) {
+      const context = {};
+      this.prepareContext(context);
+      const preparedContext = context;
+      this.recurse(preparedContext, delta, left);
+      return this.finalize(preparedContext);
+    }
+    prepareContext(context) {
+      context.buffer = [];
+      context.out = function(...args) {
+        this.buffer.push(...args);
+      };
+    }
+    typeFormattterNotFound(context, deltaType) {
+      throw new Error(`cannot format delta type: ${deltaType}`);
+    }
+    /* eslint-disable @typescript-eslint/no-unused-vars */
+    typeFormattterErrorFormatter(context, err, delta, leftValue, key, leftKey, movedFrom) {
+    }
+    /* eslint-enable @typescript-eslint/no-unused-vars */
+    finalize({ buffer }) {
+      if (Array.isArray(buffer)) {
+        return buffer.join("");
+      }
+    }
+    recurse(context, delta, left, key, leftKey, movedFrom, isLast) {
+      const useMoveOriginHere = delta && movedFrom;
+      const leftValue = useMoveOriginHere ? movedFrom.value : left;
+      if (typeof delta === "undefined" && typeof key === "undefined") {
+        return void 0;
+      }
+      const type = this.getDeltaType(delta, movedFrom);
+      const nodeType = type === "node" ? delta._t === "a" ? "array" : "object" : "";
+      if (typeof key !== "undefined") {
+        this.nodeBegin(context, key, leftKey, type, nodeType, isLast);
+      } else {
+        this.rootBegin(context, type, nodeType);
+      }
+      let typeFormattter;
+      try {
+        typeFormattter = type !== "unknown" ? this[`format_${type}`] : this.typeFormattterNotFound(context, type);
+        typeFormattter.call(this, context, delta, leftValue, key, leftKey, movedFrom);
+      } catch (err) {
+        this.typeFormattterErrorFormatter(context, err, delta, leftValue, key, leftKey, movedFrom);
+        if (typeof console !== "undefined" && console.error) {
+          console.error(err.stack);
+        }
+      }
+      if (typeof key !== "undefined") {
+        this.nodeEnd(context, key, leftKey, type, nodeType, isLast);
+      } else {
+        this.rootEnd(context, type, nodeType);
+      }
+    }
+    formatDeltaChildren(context, delta, left) {
+      this.forEachDeltaKey(delta, left, (key, leftKey, movedFrom, isLast) => {
+        this.recurse(context, delta[key], left ? left[leftKey] : void 0, key, leftKey, movedFrom, isLast);
+      });
+    }
+    forEachDeltaKey(delta, left, fn) {
+      const keys = [];
+      const arrayKeys = delta._t === "a";
+      if (!arrayKeys) {
+        const deltaKeys = Object.keys(delta);
+        if (typeof left === "object" && left !== null) {
+          keys.push(...Object.keys(left));
+        }
+        for (const key of deltaKeys) {
+          if (keys.indexOf(key) >= 0)
+            continue;
+          keys.push(key);
+        }
+        for (let index = 0, length = keys.length; index < length; index++) {
+          const key = keys[index];
+          const isLast = index === length - 1;
+          fn(
+            // for object diff, the delta key and left key are the same
+            key,
+            key,
+            // there's no "move" in object diff
+            void 0,
+            isLast
+          );
+        }
+        return;
+      }
+      const movedFrom = {};
+      for (const key in delta) {
+        if (Object.prototype.hasOwnProperty.call(delta, key)) {
+          const value = delta[key];
+          if (Array.isArray(value) && value[2] === 3) {
+            const movedDelta = value;
+            movedFrom[movedDelta[1]] = Number.parseInt(key.substring(1));
+          }
+        }
+      }
+      const arrayDelta = delta;
+      let leftIndex = 0;
+      let rightIndex = 0;
+      const leftArray = Array.isArray(left) ? left : void 0;
+      const leftLength = leftArray ? leftArray.length : (
+        // if we don't have the original array,
+        // use a length that ensures we'll go thru all delta keys
+        Object.keys(arrayDelta).reduce((max, key) => {
+          if (key === "_t")
+            return max;
+          const isLeftKey = key.substring(0, 1) === "_";
+          if (isLeftKey) {
+            const itemDelta = arrayDelta[key];
+            const leftIndex3 = Number.parseInt(key.substring(1));
+            const rightIndex3 = itemDelta[2] === 3 ? itemDelta[1] : void 0;
+            const maxIndex2 = Math.max(leftIndex3, rightIndex3 !== null && rightIndex3 !== void 0 ? rightIndex3 : 0);
+            return maxIndex2 > max ? maxIndex2 : max;
+          }
+          const rightIndex2 = Number.parseInt(key);
+          const leftIndex2 = movedFrom[rightIndex2];
+          const maxIndex = Math.max(leftIndex2 !== null && leftIndex2 !== void 0 ? leftIndex2 : 0, rightIndex2 !== null && rightIndex2 !== void 0 ? rightIndex2 : 0);
+          return maxIndex > max ? maxIndex : max;
+        }, 0) + 1
+      );
+      let rightLength = leftLength;
+      while (leftIndex < leftLength || rightIndex < rightLength || `${rightIndex}` in arrayDelta) {
+        const isLast = leftIndex === leftLength - 1 || rightIndex === rightLength - 1;
+        let hasDelta = false;
+        const leftIndexKey = `_${leftIndex}`;
+        const rightIndexKey = `${rightIndex}`;
+        const movedFromIndex = rightIndex in movedFrom ? movedFrom[rightIndex] : void 0;
+        if (leftIndexKey in arrayDelta) {
+          hasDelta = true;
+          const itemDelta = arrayDelta[leftIndexKey];
+          fn(leftIndexKey, movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex, movedFromIndex ? {
+            key: `_${movedFromIndex}`,
+            value: leftArray ? leftArray[movedFromIndex] : void 0
+          } : void 0, isLast && !(rightIndexKey in arrayDelta));
+          if (itemDelta[2] === 0) {
+            rightLength--;
+            leftIndex++;
+          } else if (itemDelta[2] === 3) {
+            leftIndex++;
+          } else {
+            leftIndex++;
+          }
+        }
+        if (rightIndexKey in arrayDelta) {
+          hasDelta = true;
+          const itemDelta = arrayDelta[rightIndexKey];
+          fn(rightIndexKey, movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex, movedFromIndex ? {
+            key: `_${movedFromIndex}`,
+            value: leftArray ? leftArray[movedFromIndex] : void 0
+          } : void 0, isLast);
+          if (Array.isArray(itemDelta) && itemDelta.length === 1) {
+            rightLength++;
+            rightIndex++;
+          } else {
+            if (movedFromIndex === void 0) {
+              leftIndex++;
+              rightIndex++;
+            } else {
+              rightIndex++;
+            }
+          }
+        }
+        if (!hasDelta) {
+          if (leftArray && movedFromIndex === void 0 || this.includeMoveDestinations !== false) {
+            fn(rightIndexKey, movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex, movedFromIndex ? {
+              key: `_${movedFromIndex}`,
+              value: leftArray ? leftArray[movedFromIndex] : void 0
+            } : void 0, isLast);
+          }
+          if (movedFromIndex !== void 0) {
+            rightIndex++;
+          } else {
+            leftIndex++;
+            rightIndex++;
+          }
+        }
+      }
+    }
+    getDeltaType(delta, movedFrom) {
+      if (typeof delta === "undefined") {
+        if (typeof movedFrom !== "undefined") {
+          return "movedestination";
+        }
+        return "unchanged";
+      }
+      if (Array.isArray(delta)) {
+        if (delta.length === 1) {
+          return "added";
+        }
+        if (delta.length === 2) {
+          return "modified";
+        }
+        if (delta.length === 3 && delta[2] === 0) {
+          return "deleted";
+        }
+        if (delta.length === 3 && delta[2] === 2) {
+          return "textdiff";
+        }
+        if (delta.length === 3 && delta[2] === 3) {
+          return "moved";
+        }
+      } else if (typeof delta === "object") {
+        return "node";
+      }
+      return "unknown";
+    }
+    parseTextDiff(value) {
+      const output = [];
+      const lines = value.split("\n@@ ");
+      for (let i2 = 0, l = lines.length; i2 < l; i2++) {
+        const line = lines[i2];
+        const lineOutput = {
+          pieces: []
+        };
+        const location = /^(?:@@ )?[-+]?(\d+),(\d+)/.exec(line).slice(1);
+        lineOutput.location = {
+          line: location[0],
+          chr: location[1]
+        };
+        const pieces = line.split("\n").slice(1);
+        for (let pieceIndex = 0, piecesLength = pieces.length; pieceIndex < piecesLength; pieceIndex++) {
+          const piece = pieces[pieceIndex];
+          if (!piece.length) {
+            continue;
+          }
+          const pieceOutput = {
+            type: "context"
+          };
+          if (piece.substring(0, 1) === "+") {
+            pieceOutput.type = "added";
+          } else if (piece.substring(0, 1) === "-") {
+            pieceOutput.type = "deleted";
+          }
+          pieceOutput.text = piece.slice(1);
+          lineOutput.pieces.push(pieceOutput);
+        }
+        output.push(lineOutput);
+      }
+      return output;
+    }
+  };
+  var base_default = BaseFormatter;
+
+  // ../../packages/jsondiffpatch/lib/formatters/annotated.js
+  var AnnotatedFormatter = class extends base_default {
+    constructor() {
+      super();
+      this.includeMoveDestinations = false;
+    }
+    prepareContext(context) {
+      super.prepareContext(context);
+      context.indent = function(levels) {
+        this.indentLevel = (this.indentLevel || 0) + (typeof levels === "undefined" ? 1 : levels);
+        this.indentPad = new Array(this.indentLevel + 1).join("&nbsp;&nbsp;");
+      };
+      context.row = (json, htmlNote) => {
+        context.out('<tr><td style="white-space: nowrap;"><pre class="jsondiffpatch-annotated-indent" style="display: inline-block">');
+        if (context.indentPad != null)
+          context.out(context.indentPad);
+        context.out('</pre><pre style="display: inline-block">');
+        context.out(json);
+        context.out('</pre></td><td class="jsondiffpatch-delta-note"><div>');
+        if (htmlNote != null)
+          context.out(htmlNote);
+        context.out("</div></td></tr>");
+      };
+    }
+    typeFormattterErrorFormatter(context, err) {
+      context.row("", `<pre class="jsondiffpatch-error">${err}</pre>`);
+    }
+    formatTextDiffString(context, value) {
+      const lines = this.parseTextDiff(value);
+      context.out('<ul class="jsondiffpatch-textdiff">');
+      for (let i2 = 0, l = lines.length; i2 < l; i2++) {
+        const line = lines[i2];
+        context.out(`<li><div class="jsondiffpatch-textdiff-location"><span class="jsondiffpatch-textdiff-line-number">${line.location.line}</span><span class="jsondiffpatch-textdiff-char">${line.location.chr}</span></div><div class="jsondiffpatch-textdiff-line">`);
+        const pieces = line.pieces;
+        for (let pieceIndex = 0, piecesLength = pieces.length; pieceIndex < piecesLength; pieceIndex++) {
+          const piece = pieces[pieceIndex];
+          context.out(`<span class="jsondiffpatch-textdiff-${piece.type}">${piece.text}</span>`);
+        }
+        context.out("</div></li>");
+      }
+      context.out("</ul>");
+    }
+    rootBegin(context, type, nodeType) {
+      context.out('<table class="jsondiffpatch-annotated-delta">');
+      if (type === "node") {
+        context.row("{");
+        context.indent();
+      }
+      if (nodeType === "array") {
+        context.row('"_t": "a",', "Array delta (member names indicate array indices)");
+      }
+    }
+    rootEnd(context, type) {
+      if (type === "node") {
+        context.indent(-1);
+        context.row("}");
+      }
+      context.out("</table>");
+    }
+    nodeBegin(context, key, leftKey, type, nodeType) {
+      context.row(`&quot;${key}&quot;: {`);
+      if (type === "node") {
+        context.indent();
+      }
+      if (nodeType === "array") {
+        context.row('"_t": "a",', "Array delta (member names indicate array indices)");
+      }
+    }
+    nodeEnd(context, key, leftKey, type, nodeType, isLast) {
+      if (type === "node") {
+        context.indent(-1);
+      }
+      context.row(`}${isLast ? "" : ","}`);
+    }
+    format_unchanged() {
+    }
+    format_movedestination() {
+    }
+    format_node(context, delta, left) {
+      this.formatDeltaChildren(context, delta, left);
+    }
+    format_added(context, delta, left, key, leftKey) {
+      formatAnyChange.call(this, context, delta, left, key, leftKey);
+    }
+    format_modified(context, delta, left, key, leftKey) {
+      formatAnyChange.call(this, context, delta, left, key, leftKey);
+    }
+    format_deleted(context, delta, left, key, leftKey) {
+      formatAnyChange.call(this, context, delta, left, key, leftKey);
+    }
+    format_moved(context, delta, left, key, leftKey) {
+      formatAnyChange.call(this, context, delta, left, key, leftKey);
+    }
+    format_textdiff(context, delta, left, key, leftKey) {
+      formatAnyChange.call(this, context, delta, left, key, leftKey);
+    }
+  };
+  var wrapPropertyName = (name) => `<pre style="display:inline-block">&quot;${name}&quot;</pre>`;
+  var deltaAnnotations = {
+    added(delta, left, key, leftKey) {
+      const formatLegend = " <pre>([newValue])</pre>";
+      if (typeof leftKey === "undefined") {
+        return `new value${formatLegend}`;
+      }
+      if (typeof leftKey === "number") {
+        return `insert at index ${leftKey}${formatLegend}`;
+      }
+      return `add property ${wrapPropertyName(leftKey)}${formatLegend}`;
+    },
+    modified(delta, left, key, leftKey) {
+      const formatLegend = " <pre>([previousValue, newValue])</pre>";
+      if (typeof leftKey === "undefined") {
+        return `modify value${formatLegend}`;
+      }
+      if (typeof leftKey === "number") {
+        return `modify at index ${leftKey}${formatLegend}`;
+      }
+      return `modify property ${wrapPropertyName(leftKey)}${formatLegend}`;
+    },
+    deleted(delta, left, key, leftKey) {
+      const formatLegend = " <pre>([previousValue, 0, 0])</pre>";
+      if (typeof leftKey === "undefined") {
+        return `delete value${formatLegend}`;
+      }
+      if (typeof leftKey === "number") {
+        return `remove index ${leftKey}${formatLegend}`;
+      }
+      return `delete property ${wrapPropertyName(leftKey)}${formatLegend}`;
+    },
+    moved(delta, left, key, leftKey) {
+      return `move from <span title="(position to remove at original state)">index ${leftKey}</span> to <span title="(position to insert at final state)">index ${delta[1]}</span>`;
+    },
+    textdiff(delta, left, key, leftKey) {
+      const location = typeof leftKey === "undefined" ? "" : typeof leftKey === "number" ? ` at index ${leftKey}` : ` at property ${wrapPropertyName(leftKey)}`;
+      return `text diff${location}, format is <a href="https://code.google.com/p/google-diff-match-patch/wiki/Unidiff">a variation of Unidiff</a>`;
+    }
+  };
+  var formatAnyChange = function(context, delta, left, key, leftKey) {
+    const deltaType = this.getDeltaType(delta);
+    const annotator = deltaAnnotations[deltaType];
+    const htmlNote = annotator && annotator(delta, left, key, leftKey);
+    let json = JSON.stringify(delta, null, 2);
+    if (deltaType === "textdiff") {
+      json = json.split("\\n").join('\\n"+\n   "');
+    }
+    context.indent();
+    context.row(json, htmlNote);
+    context.indent(-1);
+  };
+  var defaultInstance;
+  function format(delta, left) {
+    if (!defaultInstance) {
+      defaultInstance = new AnnotatedFormatter();
+    }
+    return defaultInstance.format(delta, left);
+  }
+
+  // ../../packages/jsondiffpatch/lib/formatters/html.js
+  var HtmlFormatter = class extends base_default {
+    typeFormattterErrorFormatter(context, err) {
+      const message = typeof err === "object" && err !== null && "message" in err && typeof err.message === "string" ? err.message : String(err);
+      context.out(`<pre class="jsondiffpatch-error">${htmlEscape(message)}</pre>`);
+    }
+    formatValue(context, value) {
+      context.out(`<pre>${htmlEscape(JSON.stringify(value, null, 2))}</pre>`);
+    }
+    formatTextDiffString(context, value) {
+      const lines = this.parseTextDiff(value);
+      context.out('<ul class="jsondiffpatch-textdiff">');
+      for (let i2 = 0, l = lines.length; i2 < l; i2++) {
+        const line = lines[i2];
+        context.out(`<li><div class="jsondiffpatch-textdiff-location"><span class="jsondiffpatch-textdiff-line-number">${line.location.line}</span><span class="jsondiffpatch-textdiff-char">${line.location.chr}</span></div><div class="jsondiffpatch-textdiff-line">`);
+        const pieces = line.pieces;
+        for (let pieceIndex = 0, piecesLength = pieces.length; pieceIndex < piecesLength; pieceIndex++) {
+          const piece = pieces[pieceIndex];
+          context.out(`<span class="jsondiffpatch-textdiff-${piece.type}">${htmlEscape(decodeURI(piece.text))}</span>`);
+        }
+        context.out("</div></li>");
+      }
+      context.out("</ul>");
+    }
+    rootBegin(context, type, nodeType) {
+      const nodeClass = `jsondiffpatch-${type}${nodeType ? ` jsondiffpatch-child-node-type-${nodeType}` : ""}`;
+      context.out(`<div class="jsondiffpatch-delta ${nodeClass}">`);
+    }
+    rootEnd(context) {
+      context.out(`</div>${context.hasArrows ? `<script type="text/javascript">setTimeout(${adjustArrows.toString()},10);<\/script>` : ""}`);
+    }
+    nodeBegin(context, key, leftKey, type, nodeType) {
+      const nodeClass = `jsondiffpatch-${type}${nodeType ? ` jsondiffpatch-child-node-type-${nodeType}` : ""}`;
+      const label = typeof leftKey === "number" && key.substring(0, 1) === "_" ? key.substring(1) : key;
+      context.out(`<li class="${nodeClass}" data-key="${htmlEscape(key)}"><div class="jsondiffpatch-property-name">${htmlEscape(label)}</div>`);
+    }
+    nodeEnd(context) {
+      context.out("</li>");
+    }
+    format_unchanged(context, delta, left) {
+      if (typeof left === "undefined") {
+        return;
+      }
+      context.out('<div class="jsondiffpatch-value">');
+      this.formatValue(context, left);
+      context.out("</div>");
+    }
+    format_movedestination(context, delta, left) {
+      if (typeof left === "undefined") {
+        return;
+      }
+      context.out('<div class="jsondiffpatch-value">');
+      this.formatValue(context, left);
+      context.out("</div>");
+    }
+    format_node(context, delta, left) {
+      const nodeType = delta._t === "a" ? "array" : "object";
+      context.out(`<ul class="jsondiffpatch-node jsondiffpatch-node-type-${nodeType}">`);
+      this.formatDeltaChildren(context, delta, left);
+      context.out("</ul>");
+    }
+    format_added(context, delta) {
+      context.out('<div class="jsondiffpatch-value">');
+      this.formatValue(context, delta[0]);
+      context.out("</div>");
+    }
+    format_modified(context, delta) {
+      context.out('<div class="jsondiffpatch-value jsondiffpatch-left-value">');
+      this.formatValue(context, delta[0]);
+      context.out('</div><div class="jsondiffpatch-value jsondiffpatch-right-value">');
+      this.formatValue(context, delta[1]);
+      context.out("</div>");
+    }
+    format_deleted(context, delta) {
+      context.out('<div class="jsondiffpatch-value">');
+      this.formatValue(context, delta[0]);
+      context.out("</div>");
+    }
+    format_moved(context, delta) {
+      context.out('<div class="jsondiffpatch-value">');
+      this.formatValue(context, delta[0]);
+      context.out(`</div><div class="jsondiffpatch-moved-destination">${delta[1]}</div>`);
+      context.out(
+        /* jshint multistr: true */
+        `<div class="jsondiffpatch-arrow" style="position: relative; left: -34px;">
+          <svg width="30" height="60" style="position: absolute; display: none;">
+          <defs>
+              <marker id="markerArrow" markerWidth="8" markerHeight="8"
+                 refx="2" refy="4" stroke="#88f"
+                     orient="auto" markerUnits="userSpaceOnUse">
+                  <path d="M1,1 L1,7 L7,4 L1,1" style="fill: #339;" />
+              </marker>
+          </defs>
+          <path d="M30,0 Q-10,25 26,50"
+            style="stroke: #88f; stroke-width: 2px; fill: none; stroke-opacity: 0.5; marker-end: url(#markerArrow);"
+          ></path>
+          </svg>
+      </div>`
+      );
+      context.hasArrows = true;
+    }
+    format_textdiff(context, delta) {
+      context.out('<div class="jsondiffpatch-value">');
+      this.formatTextDiffString(context, delta[0]);
+      context.out("</div>");
+    }
+  };
+  function htmlEscape(value) {
+    if (typeof value === "number")
+      return value;
+    let html = String(value);
+    const replacements = [
+      [/&/g, "&amp;"],
+      [/</g, "&lt;"],
+      [/>/g, "&gt;"],
+      [/'/g, "&apos;"],
+      [/"/g, "&quot;"]
+    ];
+    for (let i2 = 0; i2 < replacements.length; i2++) {
+      html = html.replace(replacements[i2][0], replacements[i2][1]);
+    }
+    return html;
+  }
+  var adjustArrows = function jsondiffpatchHtmlFormatterAdjustArrows(nodeArg) {
+    const node = nodeArg || document;
+    const getElementText = ({ textContent, innerText }) => textContent || innerText;
+    const eachByQuery = (el2, query, fn) => {
+      const elems = el2.querySelectorAll(query);
+      for (let i2 = 0, l = elems.length; i2 < l; i2++) {
+        fn(elems[i2]);
+      }
+    };
+    const eachChildren = ({ children }, fn) => {
+      for (let i2 = 0, l = children.length; i2 < l; i2++) {
+        fn(children[i2], i2);
+      }
+    };
+    eachByQuery(node, ".jsondiffpatch-arrow", ({ parentNode, children, style }) => {
+      const arrowParent = parentNode;
+      const svg = children[0];
+      const path = svg.children[1];
+      svg.style.display = "none";
+      const destination = getElementText(arrowParent.querySelector(".jsondiffpatch-moved-destination"));
+      const container = arrowParent.parentNode;
+      let destinationElem;
+      eachChildren(container, (child) => {
+        if (child.getAttribute("data-key") === destination) {
+          destinationElem = child;
+        }
+      });
+      if (!destinationElem) {
+        return;
+      }
+      try {
+        const distance = destinationElem.offsetTop - arrowParent.offsetTop;
+        svg.setAttribute("height", `${Math.abs(distance) + 6}`);
+        style.top = `${-8 + (distance > 0 ? 0 : distance)}px`;
+        const curve = distance > 0 ? `M30,0 Q-10,${Math.round(distance / 2)} 26,${distance - 4}` : `M30,${-distance} Q-10,${Math.round(-distance / 2)} 26,4`;
+        path.setAttribute("d", curve);
+        svg.style.display = "";
+      } catch (err) {
+      }
+    });
+  };
+  var showUnchanged = (show, node, delay) => {
+    const el2 = node || document.body;
+    const prefix = "jsondiffpatch-unchanged-";
+    const classes = {
+      showing: `${prefix}showing`,
+      hiding: `${prefix}hiding`,
+      visible: `${prefix}visible`,
+      hidden: `${prefix}hidden`
+    };
+    const list = el2.classList;
+    if (!list) {
+      return;
+    }
+    if (!delay) {
+      list.remove(classes.showing);
+      list.remove(classes.hiding);
+      list.remove(classes.visible);
+      list.remove(classes.hidden);
+      if (show === false) {
+        list.add(classes.hidden);
+      }
+      return;
+    }
+    if (show === false) {
+      list.remove(classes.showing);
+      list.add(classes.visible);
+      setTimeout(() => {
+        list.add(classes.hiding);
+      }, 10);
+    } else {
+      list.remove(classes.hiding);
+      list.add(classes.showing);
+      list.remove(classes.hidden);
+    }
+    const intervalId = setInterval(() => {
+      adjustArrows(el2);
+    }, 100);
+    setTimeout(() => {
+      list.remove(classes.showing);
+      list.remove(classes.hiding);
+      if (show === false) {
+        list.add(classes.hidden);
+        list.remove(classes.visible);
+      } else {
+        list.add(classes.visible);
+        list.remove(classes.hidden);
+      }
+      setTimeout(() => {
+        list.remove(classes.visible);
+        clearInterval(intervalId);
+      }, delay + 400);
+    }, delay);
+  };
+  var hideUnchanged = (node, delay) => showUnchanged(false, node, delay);
+  var defaultInstance2;
+  function format2(delta, left) {
+    if (!defaultInstance2) {
+      defaultInstance2 = new HtmlFormatter();
+    }
+    return defaultInstance2.format(delta, left);
+  }
+
+  // ../../packages/jsondiffpatch/lib/formatters/jsonpatch.js
+  var OPERATIONS = {
+    add: "add",
+    remove: "remove",
+    replace: "replace",
+    move: "move"
+  };
+  var JSONFormatter = class {
+    format(delta) {
+      const ops = [];
+      const stack = [{ path: "", delta }];
+      while (stack.length > 0) {
+        const current = stack.pop();
+        if (current === void 0 || !current.delta)
+          break;
+        if (Array.isArray(current.delta)) {
+          if (current.delta.length === 1) {
+            ops.push({
+              op: OPERATIONS.add,
+              path: current.path,
+              value: current.delta[0]
+            });
+          }
+          if (current.delta.length === 2) {
+            ops.push({
+              op: OPERATIONS.replace,
+              path: current.path,
+              value: current.delta[1]
+            });
+          }
+          if (current.delta[2] === 0) {
+            ops.push({
+              op: OPERATIONS.remove,
+              path: current.path
+            });
+          }
+          if (current.delta[2] === 2) {
+            throw new Error("JSONPatch (RFC 6902) doesn't support text diffs, disable textDiff option");
+          }
+        } else if (current.delta._t === "a") {
+          const arrayDelta = current.delta;
+          const keys = { left: [], right: [] };
+          Object.keys(arrayDelta).forEach((key) => {
+            if (key === "_t")
+              return;
+            if (key.substring(0, 1) === "_") {
+              keys.left.push({
+                key,
+                index: parseInt(key.substring(1))
+              });
+            } else {
+              keys.right.push({
+                key,
+                index: parseInt(key)
+              });
+            }
+          });
+          keys.left.sort((a, b) => b.index - a.index);
+          keys.right.sort((a, b) => a.index - b.index);
+          const moves = [];
+          keys.left.forEach(({ key, index }) => {
+            const childDelta = arrayDelta[key];
+            if (childDelta[2] === 3) {
+              moves.push({ from: index, to: childDelta[1] });
+            }
+          });
+          if (moves.length > 0) {
+            moves.sort((a, b) => a.to - b.to);
+          }
+          keys.left.forEach(({ key, index }) => {
+            const childDelta = arrayDelta[key];
+            if (childDelta[2] === 0) {
+              ops.push({
+                op: OPERATIONS.remove,
+                path: `${current.path}/${index}`
+              });
+              if (moves.length > 0) {
+                moves.forEach((move) => {
+                  if (index < move.from) {
+                    move.from--;
+                  }
+                });
+              }
+            }
+          });
+          if (moves.length > 0) {
+            const adds = [];
+            keys.right.forEach(({ index, key }) => {
+              const childDelta = arrayDelta[key];
+              if (Array.isArray(childDelta) && childDelta.length === 1) {
+                adds.push({ index });
+              }
+            });
+            const pendingMoves = [...moves];
+            while (pendingMoves.length > 0) {
+              pendingMoves.sort((a, b) => a.to - b.to);
+              const first = pendingMoves[0];
+              const last = pendingMoves[pendingMoves.length - 1];
+              const [nextMove, extraMove] = pendingMoves.length < 2 || pendingMoves.slice(1).every((m) => m.from > first.to || m.from === first.to && first.to < first.from) ? (
+                // first can move to final location (nothing will move before)
+                [pendingMoves.shift()]
+              ) : pendingMoves.slice(0, -1).every((m) => m.from <= last.to) ? (
+                // last can move to final location (nothing will move after)
+                [pendingMoves.pop()]
+              ) : (() => {
+                const move = pendingMoves.shift();
+                const originalTo = move.to;
+                move.to += pendingMoves.reduce((acc, m) => {
+                  return acc + (m.from <= originalTo ? 1 : 0);
+                }, 0);
+                return [
+                  move,
+                  {
+                    from: move.to,
+                    to: originalTo
+                  }
+                ];
+              })();
+              if (nextMove.from !== nextMove.to) {
+                ops.push({
+                  op: OPERATIONS.move,
+                  from: `${current.path}/${nextMove.from}`,
+                  path: `${current.path}/${nextMove.to}`
+                });
+                pendingMoves.forEach((m) => {
+                  if (nextMove.from === m.from) {
+                    throw new Error("trying to move the same item twice");
+                  }
+                  if (nextMove.from < m.from) {
+                    m.from--;
+                  }
+                  if (nextMove.to <= m.from) {
+                    m.from++;
+                  }
+                });
+              }
+              if (extraMove) {
+                pendingMoves.push(extraMove);
+              }
+            }
+          }
+          keys.right.forEach(({ key, index }) => {
+            const childDelta = arrayDelta[key];
+            if (Array.isArray(childDelta) && childDelta.length === 1) {
+              ops.push({
+                op: OPERATIONS.add,
+                path: `${current.path}/${index}`,
+                value: childDelta[0]
+              });
+            }
+          });
+          const stackUpdates = [];
+          keys.right.forEach(({ key }) => {
+            const childDelta = arrayDelta[key];
+            if (!childDelta)
+              return;
+            if (Array.isArray(childDelta)) {
+              if (childDelta.length === 2) {
+                ops.push({
+                  op: OPERATIONS.replace,
+                  path: `${current.path}/${key}`,
+                  value: childDelta[1]
+                });
+              } else if (childDelta[2] === 2) {
+                throw new Error("JSONPatch (RFC 6902) doesn't support text diffs, disable textDiff option");
+              }
+            } else {
+              stackUpdates.push({
+                path: `${current.path}/${key}`,
+                delta: childDelta
+              });
+            }
+          });
+          if (stackUpdates.length > 0) {
+            stack.push(...stackUpdates.reverse());
+          }
+        } else {
+          Object.keys(current.delta).reverse().forEach((key) => {
+            const childDelta = current.delta[key];
+            stack.push({
+              path: `${current.path}/${formatPropertyNameForRFC6902(key)}`,
+              delta: childDelta
+            });
+          });
+        }
+      }
+      return ops;
+    }
+  };
+  var defaultInstance3;
+  var format3 = (delta) => {
+    if (!defaultInstance3) {
+      defaultInstance3 = new JSONFormatter();
+    }
+    return defaultInstance3.format(delta);
+  };
+  var formatPropertyNameForRFC6902 = function(path) {
+    if (typeof path !== "string")
+      return path.toString();
+    if (path.indexOf("/") === -1 && path.indexOf("~") === -1)
+      return path;
+    return path.replace(/~/g, "~0").replace(/\//g, "~1");
+  };
+
   // demo.ts
   var colorSchemeIsDark = () => {
     const colorSchemaMeta = (document.querySelector(
@@ -4705,7 +4986,7 @@
     json.push(JSON.stringify(data, null, 2));
     return json;
   };
-  var instance = create({
+  var diffOptions = {
     objectHash: function(obj, index) {
       const objRecord = obj;
       if (typeof objRecord._id !== "undefined") {
@@ -4721,6 +5002,13 @@
         return objRecord.name;
       }
       return "$$index:" + index;
+    }
+  };
+  var instance = create(diffOptions);
+  var instanceWithNoTextDiff = create({
+    ...diffOptions,
+    textDiff: {
+      minLength: Number.MAX_VALUE
     }
   });
   var dom = {
@@ -4880,6 +5168,9 @@
     ),
     delta: new JsonArea(
       document.getElementById("json-delta")
+    ),
+    jsonpatch: new JsonArea(
+      document.getElementById("jsonpatch")
     )
   };
   var compare2 = function() {
@@ -4896,8 +5187,10 @@
       error = err;
     }
     areas.delta.error(false);
+    areas.jsonpatch.error(false);
     if (error) {
       areas.delta.setValue("");
+      areas.jsonpatch.setValue("");
       return;
     }
     const selectedType = getSelectedDeltaType();
@@ -4905,8 +5198,13 @@
     const visualdiff = document.getElementById("visualdiff");
     const annotateddiff = document.getElementById("annotateddiff");
     const jsondifflength = document.getElementById("jsondifflength");
+    const jsonpatchlength = document.getElementById("jsonpatchlength");
     try {
-      const delta = instance.diff(left, right);
+      const noTextDiff = selectedType === "jsonpatch";
+      const delta = (noTextDiff ? instanceWithNoTextDiff : instance).diff(
+        left,
+        right
+      );
       resultsSections.setAttribute(
         "data-diff",
         typeof delta === "undefined" ? "no-diff" : "has-diff"
@@ -4922,6 +5220,10 @@
           case "json":
             areas.delta.setValue("no diff");
             jsondifflength.innerHTML = "0";
+            break;
+          case "jsonpatch":
+            areas.jsonpatch.setValue("[]");
+            jsonpatchlength.innerHTML = "0";
             break;
         }
       } else {
@@ -4940,6 +5242,11 @@
             areas.delta.setValue(JSON.stringify(delta, null, 2));
             jsondifflength.innerHTML = Math.round(JSON.stringify(delta).length / 102.4) / 10 + "";
             break;
+          case "jsonpatch":
+            const jsonpatch = format3(delta);
+            areas.jsonpatch.setValue(prettyJsonPatch(jsonpatch));
+            jsonpatchlength.innerHTML = Math.round(JSON.stringify(jsonpatch).length / 102.4) / 10 + "";
+            break;
         }
       }
     } catch (err) {
@@ -4948,6 +5255,8 @@
       annotateddiff.innerHTML = "";
       areas.delta.setValue("");
       areas.delta.error(err);
+      areas.jsonpatch.setValue("");
+      areas.jsonpatch.error(err);
       if (typeof console !== "undefined" && console.error) {
         console.error(err);
         console.error(err.stack);
@@ -4959,15 +5268,39 @@
   areas.left.makeEditor();
   areas.right.makeEditor();
   areas.delta.makeEditor(true);
+  areas.jsonpatch.makeEditor(true);
   areas.left.element.addEventListener("change", compare2);
   areas.right.element.addEventListener("change", compare2);
   areas.left.element.addEventListener("keyup", compare2);
   areas.right.element.addEventListener("keyup", compare2);
+  window.addEventListener("keydown", (e) => {
+    if (e.altKey && e.key === "ArrowRight") {
+      areas.right.editor?.focus();
+      areas.right.editor?.execCommand("selectAll");
+    }
+    if (e.altKey && e.key === "ArrowLeft") {
+      areas.left.editor?.focus();
+      areas.left.editor?.execCommand("selectAll");
+    }
+    if (e.metaKey && e.key === "s") {
+      const leftJson = areas.left.getValue();
+      const rightJson = areas.right.getValue();
+      window.history.pushState(
+        {},
+        "",
+        `?left=${encodeURIComponent(leftJson)}&right=${encodeURIComponent(
+          rightJson
+        )}`
+      );
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
   var getSelectedDeltaType = function() {
     return document.querySelector("#results")?.getAttribute("data-delta-type") || "visual";
   };
   var showDeltaType = function(type) {
-    if (type !== "visual" && type !== "annotated" && type !== "json") {
+    if (type !== "visual" && type !== "annotated" && type !== "json" && type !== "jsonpatch") {
       return false;
     }
     document.querySelectorAll(".delta-type-switch li").forEach((el2) => {
@@ -4978,6 +5311,9 @@
     compare2();
     if (type === "json") {
       areas.delta.editor.refresh();
+    }
+    if (type === "jsonpatch") {
+      areas.jsonpatch.editor.refresh();
     }
     return true;
   };
@@ -5238,4 +5574,22 @@
       }
     });
   });
+  var prettyJsonPatch = (patch) => {
+    if (patch.length === 0) {
+      return "[]";
+    }
+    const lines = patch.map((op, index) => {
+      const opPad = "".padStart(Math.max(0, 7 - op.op.length), " ");
+      const extraProps = Object.keys(op).filter((key) => !["op", "path"].includes(key)).map((key) => {
+        const value = key in op ? op[key] : void 0;
+        if (value === void 0)
+          return "";
+        return `, ${JSON.stringify(key)}: ${JSON.stringify(value)}`;
+      }).join("");
+      return `  { "op": "${op.op}",${opPad} "path": "${op.path}"${extraProps} }${index < patch.length - 1 ? "," : ""}
+`;
+    });
+    return `[
+${lines.join("")}]`;
+  };
 })();
