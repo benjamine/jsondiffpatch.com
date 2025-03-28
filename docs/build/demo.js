@@ -192,12 +192,12 @@
           }
           return it;
         };
-        var _ctx = function(fn, that, length2) {
+        var _ctx = function(fn, that, length) {
           _aFunction(fn);
           if (that === void 0) {
             return fn;
           }
-          switch (length2) {
+          switch (length) {
             case 1:
               return function(a) {
                 return fn.call(that, a);
@@ -288,9 +288,9 @@
         var codePointAt = _core.String.codePointAt;
         var max = Math.max;
         var min = Math.min;
-        var _toAbsoluteIndex = function(index, length2) {
+        var _toAbsoluteIndex = function(index, length) {
           index = _toInteger(index);
-          return index < 0 ? max(index + length2, 0) : min(index, length2);
+          return index < 0 ? max(index + length, 0) : min(index, length);
         };
         var fromCharCode = String.fromCharCode;
         var $fromCodePoint = String.fromCodePoint;
@@ -1771,17 +1771,17 @@
       return text_length;
     }
     var best = 0;
-    var length2 = 1;
+    var length = 1;
     while (true) {
-      var pattern = text1.substring(text_length - length2);
+      var pattern = text1.substring(text_length - length);
       var found = text2.indexOf(pattern);
       if (found == -1) {
         return best;
       }
-      length2 += found;
-      if (found == 0 || text1.substring(text_length - length2) == text2.substring(0, length2)) {
-        best = length2;
-        length2++;
+      length += found;
+      if (found == 0 || text1.substring(text_length - length) == text2.substring(0, length)) {
+        best = length;
+        length++;
       }
     }
   };
@@ -3186,9 +3186,9 @@
         throw new Error("add this pipe to a processor before using it");
       }
       const debug = this.debug;
-      const length2 = this.filters.length;
+      const length = this.filters.length;
       const context = input;
-      for (let index = 0; index < length2; index++) {
+      for (let index = 0; index < length; index++) {
         const filter = this.filters[index];
         if (!filter)
           continue;
@@ -3702,8 +3702,8 @@
       return;
     }
     const array = context.left;
-    const length2 = context.children.length;
-    for (let index = 0; index < length2; index++) {
+    const length = context.children.length;
+    for (let index = 0; index < length; index++) {
       const child = context.children[index];
       if (child === void 0)
         continue;
@@ -3785,11 +3785,11 @@
       return;
     }
     const arrayDelta = deltaWithChildren;
-    const length2 = context.children.length;
+    const length = context.children.length;
     const delta = {
       _t: "a"
     };
-    for (let index = 0; index < length2; index++) {
+    for (let index = 0; index < length; index++) {
       const child = context.children[index];
       if (child === void 0)
         continue;
@@ -3832,9 +3832,9 @@
     if (!context || !context.children) {
       return;
     }
-    const length2 = context.children.length;
+    const length = context.children.length;
     let result = context.result;
-    for (let index = 0; index < length2; index++) {
+    for (let index = 0; index < length; index++) {
       const child = context.children[index];
       if (child === void 0)
         continue;
@@ -3915,8 +3915,8 @@
       return;
     }
     const object = context.left;
-    const length2 = context.children.length;
-    for (let index = 0; index < length2; index++) {
+    const length = context.children.length;
+    for (let index = 0; index < length; index++) {
       const child = context.children[index];
       if (child === void 0)
         continue;
@@ -3954,9 +3954,9 @@
     if (deltaWithChildren._t) {
       return;
     }
-    const length2 = context.children.length;
+    const length = context.children.length;
     const delta = {};
-    for (let index = 0; index < length2; index++) {
+    for (let index = 0; index < length; index++) {
       const child = context.children[index];
       if (child === void 0)
         continue;
@@ -4298,7 +4298,7 @@
           const key = keys[index];
           if (key === void 0)
             continue;
-          const isLast = index === length - 1;
+          const isLast = index === keys.length - 1;
           fn(
             // for object diff, the delta key and left key are the same
             key,
@@ -4346,7 +4346,6 @@
       );
       let rightLength = leftLength;
       while (leftIndex < leftLength || rightIndex < rightLength || `${rightIndex}` in arrayDelta) {
-        const isLast = leftIndex === leftLength - 1 || rightIndex === rightLength - 1;
         let hasDelta = false;
         const leftIndexKey = `_${leftIndex}`;
         const rightIndexKey = `${rightIndex}`;
@@ -4354,10 +4353,16 @@
         if (leftIndexKey in arrayDelta) {
           hasDelta = true;
           const itemDelta = arrayDelta[leftIndexKey];
-          fn(leftIndexKey, movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex, movedFromIndex ? {
-            key: `_${movedFromIndex}`,
-            value: leftArray ? leftArray[movedFromIndex] : void 0
-          } : void 0, isLast && !(rightIndexKey in arrayDelta));
+          fn(
+            leftIndexKey,
+            movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex,
+            movedFromIndex ? {
+              key: `_${movedFromIndex}`,
+              value: leftArray ? leftArray[movedFromIndex] : void 0
+            } : void 0,
+            // is this the last key in this delta?
+            leftIndex === leftLength - 1 && rightIndex === rightLength - 1 && !(`${rightIndex + 1}` in arrayDelta) && !(rightIndexKey in arrayDelta)
+          );
           if (Array.isArray(itemDelta)) {
             if (itemDelta[2] === 0) {
               rightLength--;
@@ -4374,11 +4379,18 @@
         if (rightIndexKey in arrayDelta) {
           hasDelta = true;
           const itemDelta = arrayDelta[rightIndexKey];
-          fn(rightIndexKey, movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex, movedFromIndex ? {
-            key: `_${movedFromIndex}`,
-            value: leftArray ? leftArray[movedFromIndex] : void 0
-          } : void 0, isLast);
-          if (Array.isArray(itemDelta) && itemDelta.length === 1) {
+          const isItemAdded = Array.isArray(itemDelta) && itemDelta.length === 1;
+          fn(
+            rightIndexKey,
+            movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex,
+            movedFromIndex ? {
+              key: `_${movedFromIndex}`,
+              value: leftArray ? leftArray[movedFromIndex] : void 0
+            } : void 0,
+            // is this the last key in this delta?
+            leftIndex === leftLength - 1 && rightIndex === rightLength - 1 + (isItemAdded ? 1 : 0) && !(`_${leftIndex + 1}` in arrayDelta) && !(`${rightIndex + 1}` in arrayDelta)
+          );
+          if (isItemAdded) {
             rightLength++;
             rightIndex++;
           } else if (movedFromIndex === void 0) {
@@ -4390,10 +4402,16 @@
         }
         if (!hasDelta) {
           if (leftArray && movedFromIndex === void 0 || this.includeMoveDestinations !== false) {
-            fn(rightIndexKey, movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex, movedFromIndex ? {
-              key: `_${movedFromIndex}`,
-              value: leftArray ? leftArray[movedFromIndex] : void 0
-            } : void 0, isLast);
+            fn(
+              rightIndexKey,
+              movedFromIndex !== null && movedFromIndex !== void 0 ? movedFromIndex : leftIndex,
+              movedFromIndex ? {
+                key: `_${movedFromIndex}`,
+                value: leftArray ? leftArray[movedFromIndex] : void 0
+              } : void 0,
+              // is this the last key in this delta?
+              leftIndex === leftLength - 1 && rightIndex === rightLength - 1 && !(`${rightIndex + 1}` in arrayDelta)
+            );
           }
           if (movedFromIndex !== void 0) {
             rightIndex++;
