@@ -4551,7 +4551,8 @@
       context.out(`<pre class="jsondiffpatch-error">${htmlEscape(message)}</pre>`);
     }
     formatValue(context, value) {
-      context.out(`<pre>${htmlEscape(JSON.stringify(value, null, 2))}</pre>`);
+      const valueAsHtml = typeof value === "undefined" ? "undefined" : htmlEscape(JSON.stringify(value, null, 2));
+      context.out(`<pre>${valueAsHtml}</pre>`);
     }
     formatTextDiffString(context, value) {
       const lines = this.parseTextDiff(value);
@@ -5207,18 +5208,20 @@
   };
   var diffOptions = {
     objectHash: function(obj, index) {
-      const objRecord = obj;
-      if (typeof objRecord._id !== "undefined") {
-        return objRecord._id;
-      }
-      if (typeof objRecord.id !== "undefined") {
-        return objRecord.id;
-      }
-      if (typeof objRecord.key !== "undefined") {
-        return objRecord.key;
-      }
-      if (typeof objRecord.name !== "undefined") {
-        return objRecord.name;
+      if (typeof obj === "object" && obj !== null) {
+        const objRecord = obj;
+        if (typeof objRecord._id !== "undefined") {
+          return objRecord._id;
+        }
+        if (typeof objRecord.id !== "undefined") {
+          return objRecord.id;
+        }
+        if (typeof objRecord.key !== "undefined") {
+          return objRecord.key;
+        }
+        if (typeof objRecord.name !== "undefined") {
+          return objRecord.name;
+        }
       }
       return "$$index:" + index;
     }
